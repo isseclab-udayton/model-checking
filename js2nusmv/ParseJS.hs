@@ -66,10 +66,12 @@ mstmt (JSAssignStatement e1 op e2 _) =
        MIntVar x -> Just x
        _         -> Nothing
      rhs' <- case op of
-       JSAssign _      -> Just rhs
-       JSTimesAssign _ -> Just (MMul lhs rhs)
-       JSPlusAssign _  -> Just (MAdd lhs rhs)
-       JSMinusAssign _ -> Just (MSub lhs rhs)
+       JSAssign _       -> Just rhs
+       JSTimesAssign _  -> Just (MMul lhs rhs)
+       JSDivideAssign _ -> Just (MDiv lhs rhs)
+       JSModAssign _    -> Just (MMod lhs rhs)
+       JSPlusAssign _   -> Just (MAdd lhs rhs)
+       JSMinusAssign _  -> Just (MSub lhs rhs)
      return [MSetIntVar lhs' rhs']
 mstmt (JSWhile _ _ e _ s) =
   do cond <- mboolexpr e
@@ -77,11 +79,34 @@ mstmt (JSWhile _ _ e _ s) =
      return [MWhile cond whileBlock]
 mstmt _ = Nothing
 
+-- Boolean Expressions
 mboolexpr :: JSExpression -> Maybe MBoolExpr
 mboolexpr (JSIdentifier _ "undefined") = Nothing
 mboolexpr (JSIdentifier _ s) = Just (MBoolVar s)
 mboolexpr (JSLiteral _ "true") = Just MTrue
 mboolexpr (JSLiteral _ "false") = Just MFalse
+mboolexpr (JSExpressionBinary e1 op e2) =
+  do loperand <- mboolexpr e1
+     roperand <- mboolexpr e2
+     operator <- case op of
+       JSBinOpOr _  -> Just MOr
+       JSBinOpAnd _ -> Just MAnd
+       JSBinOpEq _  -> Just MEqv
+       JSBinOpNeq _ -> Just MXor
+       _            -> Nothing
+     return (operator loperand roperand)
+  <|>
+  do loperand <- mintexpr e1
+     roperand <- mintexpr e2
+     operator <- case op of
+       JSBinOpEq _  -> Just MEqu
+       JSBinOpNeq _ -> Just MNeq
+       JSBinOpLt _  -> Just MLT
+       JSBinOpLe _  -> Just MLE
+       JSBinOpGt _  -> Just MGT
+       JSBinOpGe _  -> Just MGE
+       _            -> Nothing
+     return (operator loperand roperand)
 mboolexpr (JSExpressionParen _ e _) = mboolexpr e
 mboolexpr (JSMemberExpression (JSIdentifier _ fname) _ argList _) =
   case (fname, fromCommaList argList) of
@@ -97,12 +122,30 @@ mboolexpr (JSMemberExpression (JSIdentifier _ fname) _ argList _) =
     ("opEQV", x:y:[]) -> liftA2 MEqv (mboolexpr x) (mboolexpr y)
     ("opXOR", x:y:[]) -> liftA2 MXor (mboolexpr x) (mboolexpr y)
     _               -> Nothing
+mboolexpr (JSUnaryExpression op e) =
+  do operand <- mboolexpr e
+     operator <- case op of
+       JSUnaryOpNot _ -> Just MNot
+       _              -> Nothing
+     return (operator operand)
 mboolexpr _ = Nothing
 
+-- Integer Expressions
 mintexpr :: JSExpression -> Maybe MIntExpr
 mintexpr (JSIdentifier _ "undefined") = Nothing
 mintexpr (JSIdentifier _ s) = Just (MIntVar s)
 mintexpr (JSDecimal _ s) = Just (MIntVal (read s))
+mintexpr (JSExpressionBinary e1 op e2) =
+  do loperand <- mintexpr e1
+     roperand <- mintexpr e2
+     operator <- case op of
+       JSBinOpPlus _   -> Just MAdd
+       JSBinOpMinus _  -> Just MSub
+       JSBinOpTimes _  -> Just MMul
+       JSBinOpDivide _ -> Just MDiv
+       JSBinOpMod _    -> Just MMod
+       _               -> Nothing
+     return (operator loperand roperand)
 mintexpr (JSExpressionParen _ e _) = mintexpr e
 mintexpr (JSMemberExpression (JSIdentifier _ fname) _ argList _) =
   case (fname, fromCommaList argList) of
@@ -113,6 +156,12 @@ mintexpr (JSMemberExpression (JSIdentifier _ fname) _ argList _) =
     ("opMOD", x:y:[]) -> liftA2 MMod (mintexpr x) (mintexpr y)
     ("opNEG", x:[])   -> MNeg <$> (mintexpr x)
     _               -> Nothing
+mintexpr (JSUnaryExpression op e) =
+  do operand <- mintexpr e
+     operator <- case op of
+       JSUnaryOpMinus _ -> Just MNeg
+       _                -> Nothing
+     return (operator operand)
 mintexpr _ = Nothing
 
 -- Utility functions
