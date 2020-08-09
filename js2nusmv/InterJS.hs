@@ -6,17 +6,11 @@
 
 module InterJS where
 
-import qualified Data.Set as Set
-import Data.List (intercalate)
-import Language.JavaScript.Parser.Parser as Parser
-import Language.JavaScript.Parser.AST as AST
-
 data MProg = MProg [MVarDecl] [MStmt]
 
 data MVarDecl
    = MIntVarDecl String MIntExpr
    | MBoolVarDecl String MBoolExpr
-   deriving Show
 
 data MStmt
    = MSetBoolVar String MBoolExpr
@@ -24,7 +18,6 @@ data MStmt
    | MIf MBoolExpr [MStmt]
    | MIfElse MBoolExpr [MStmt] [MStmt]
    | MWhile MBoolExpr [MStmt]
-   deriving Show
 
 data MBoolExpr
    = MTrue
@@ -41,7 +34,6 @@ data MBoolExpr
    | MNot MBoolExpr
    | MEqv MBoolExpr MBoolExpr
    | MXor MBoolExpr MBoolExpr
-   deriving Show
 
 data MIntExpr
    = MIntVal Integer
@@ -52,7 +44,3 @@ data MIntExpr
    | MDiv MIntExpr MIntExpr
    | MMod MIntExpr MIntExpr
    | MNeg MIntExpr
-   deriving Show
-
-instance Show MProg where
-  show (MProg decls stmts) = intercalate "\n" (fmap show decls ++ fmap show stmts)
