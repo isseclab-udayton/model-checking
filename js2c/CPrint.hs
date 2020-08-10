@@ -1,5 +1,5 @@
 {- CPrint.hs
- - Defines an instance of Show for C programs.
+ - Defines an instance of Show for C programs
  -}
 
 module CPrint where
@@ -13,21 +13,26 @@ showCStmt :: String -> CStmt -> String
 showCStmt ind (CVarDecl v (Just e)) = printf "%sJSVar %s = %s;" ind v (show e)
 showCStmt ind (CVarDecl v Nothing) = printf "%sJSVar %s;" ind v
 showCStmt ind (CSetVar v e) = printf "%s%s = %s;" ind v (show e)
-showCStmt ind (CIf e stmts) =
-  printf "%sif (%s) {\n%s%s}" ind (show e) block ind
-    where block = foldr (\h t -> (showCStmt (ind ++ "    ") h) ++ "\n") "" stmts
-showCStmt ind (CIfElse cond b1 b2) =
-  printf "%sif (%s) {\n%s%s} else {\n%s%s}" ind (show cond) ifBlock ind elseBlock ind
-    where ifBlock = foldr (\h t -> (showCStmt (ind ++ "    ") h) ++ "\n") "" b1
-          elseBlock = foldr (\h t -> (showCStmt (ind ++ "    ") h) ++ "\n") "" b2
 showCStmt ind (CFuncStmt f args) = printf "%s%s(%s);" ind f (intercalate ", " (show <$> args))
-showCStmt ind (CReturn e) = printf "%sreturn %s;" ind (show e)
+showCStmt ind (CLabelled l s) = printf "%s%s: %s" ind l (show s)
+showCStmt ind (CIf e stmts) =
+  printf "%sif (ToBoolean(%s).val.asBool) {\n%s\n%s}" ind (show e) block ind
+    where block = intercalate "\n" (showCStmt (ind ++ "    ") <$> stmts)
+showCStmt ind (CIfElse cond b1 b2) =
+  printf "%sif (ToBoolean(%s).val.asBool) {\n%s\n%s} else {\n%s\n%s}" ind (show cond) ifBlock ind elseBlock ind
+    where ifBlock = intercalate "\n" (showCStmt (ind ++ "    ") <$> b1)
+          elseBlock = intercalate "\n" (showCStmt (ind ++ "    ") <$> b2)
 showCStmt ind (CWhile e stmts) =
-  printf "%swhile (%s) {\n%s%s}" ind (show e) block ind
-    where block = foldr (\h t -> (showCStmt (ind ++ "    ") h) ++ "\n") "" stmts
+  printf "%swhile (ToBoolean(%s).val.asBool) {\n%s\n%s}" ind (show e) block ind
+    where block = intercalate "\n" (showCStmt (ind ++ "    ") <$> stmts)
+showCStmt ind (CReturn e) = printf "%sreturn %s;" ind (show e)
 
 instance Show CProg where
-  show (CProg decls) = intercalate "\n" (show <$> decls)
+  show (CProg decls stmts) =
+    intercalate "\n" (show <$> decls)
+      ++ "\nvoid main() {\n"
+      ++ intercalate "\n" (showCStmt "    " <$> stmts)
+      ++ "\n}\n"
 
 instance Show CDecl where
   show (CGlobalVar v (Just e)) = printf "JSVar %s = %s;\n" v (show e)
@@ -52,6 +57,7 @@ instance Show CExpr where
   show (CMul e1 e2) = printf "jsMul(%s, %s)" (show e1) (show e2)
   show (CDiv e1 e2) = printf "jsDiv(%s, %s)" (show e1) (show e2)
   show (CMod e1 e2) = printf "jsMod(%s, %s)" (show e1) (show e2)
+  show (CNeg e) = printf "jsNeg(%s)" (show e)
   show (CEqu e1 e2) = printf "jsEqu(%s, %s)" (show e1) (show e2)
   show (CNeq e1 e2) = printf "jsNeq(%s, %s)" (show e1) (show e2)
   show (CLT e1 e2) = printf "jsLT(%s, %s)" (show e1) (show e2)

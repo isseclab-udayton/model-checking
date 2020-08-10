@@ -1,3 +1,9 @@
+/* JS2C prelude
+ *
+ * NOTE: This prelude is not complete. It only contains a sample
+ * of definitions for demonstration purposes.
+ */
+
 enum JSType {JSnumber, JSboolean, JSundefined};
 
 typedef union {
@@ -31,5 +37,5 @@ JSVar jsAnd(JSVar x, JSVar y) {
     return (ToBoolean(x).val.asBool ? y : x);
 }
 
-// End of Prelude
+// end of prelude
 

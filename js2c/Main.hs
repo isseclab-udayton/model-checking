@@ -10,8 +10,8 @@ import Clang
 import CPrint
 
 helpMessage =
- "Usage:\n\
- \    js2c [-o outfile] [infile] [--help] [--noprelude]"
+ "Usage:\n\n\
+ \    js2c [-o outfile] [infile] [--help] [--noprelude]\n"
 
 data Action = PrintHelp
             | Translate Bool String String

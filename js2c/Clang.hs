@@ -15,7 +15,7 @@ import Control.Applicative (liftA2)
 import Language.JavaScript.Parser.Parser as Parser
 import Language.JavaScript.Parser.AST as AST
 
-data CProg = CProg [CDecl]
+data CProg = CProg [CDecl] [CStmt]
 
 data CDecl = CGlobalVar String (Maybe CExpr)
            | CFuncDecl String [String] [CStmt]
@@ -23,15 +23,16 @@ data CDecl = CGlobalVar String (Maybe CExpr)
 data CStmt = CVarDecl String (Maybe CExpr)
            | CSetVar String CExpr
            | CFuncStmt String [CExpr]
+           | CLabelled String CStmt
            | CIf CExpr [CStmt]
            | CIfElse CExpr [CStmt] [CStmt]
            | CWhile CExpr [CStmt]
            | CReturn CExpr
 
-data CExpr = CTrue               -- {JSboolean, {.boolean = 1})
-           | CFalse              -- {JSboolean, {.boolean = 0}}
+data CExpr = CTrue
+           | CFalse
            | CUndefined
-           | CNumber String      -- {JSnumber, {.number = <_>}}
+           | CNumber String
            | CVar String
            | CFuncCall String [CExpr]
            | CAdd CExpr CExpr
@@ -39,6 +40,7 @@ data CExpr = CTrue               -- {JSboolean, {.boolean = 1})
            | CMul CExpr CExpr
            | CDiv CExpr CExpr
            | CMod CExpr CExpr
+           | CNeg CExpr
            | CEqu CExpr CExpr
            | CNeq CExpr CExpr
            | CLT CExpr CExpr
@@ -69,31 +71,37 @@ getVarInits = combine1 . (f<$>) . fromCommaList
         f _ = Nothing
 
 cprog :: JSAST -> Maybe CProg
-cprog (JSAstProgram stmts _) =
-  do decls <- combine2 (cdecl <$> stmts)
-     return (CProg decls)
+cprog (JSAstProgram stmts _) = cprog' stmts
 cprog _ = Nothing
 
-cdecl :: JSStatement -> Maybe [CDecl]
-cdecl (JSFunction _ (JSIdentName _ ident) _ arglist _ (JSBlock _ stmts _) _) =
+-- Converts JSStatements into CDecl and CStmt objects. All function/variable
+-- declarations must appear before any other statement. The C main function
+-- begins with the first statement that is not a func/var declaration.
+cprog' :: [JSStatement] -> Maybe CProg
+cprog' ((JSFunction _ (JSIdentName _ ident) _ arglist _ (JSBlock _ stmts _) _):rest) =
   do args <- combine1 (f <$> (fromCommaList arglist))
      body <- getBody stmts
-     return [CFuncDecl ident args body]
+     (CProg rd rs) <- cprog' rest
+     return $ CProg ((CFuncDecl ident args body):rd) rs
     where f (JSIdentifier _ x) = Just x
           f _ = Nothing
           getBody [] = Just [CReturn CUndefined]
           getBody [JSReturn _ Nothing _] = Just [CReturn CUndefined]
           getBody [JSReturn _ (Just e) _] = cexpr e >>= (\x -> Just [CReturn x])
-          getBody [s] = (liftA2 (++)) (cstmt s) (Just [CReturn CUndefined])
-          getBody (s:ss) = (liftA2 (++)) (cstmt s) (getBody ss)
-cdecl (JSVariable _ clist _) =
+          getBody [s] = liftA2 (++) (cstmt s) (Just [CReturn CUndefined])
+          getBody (s:ss) = liftA2 (++) (cstmt s) (getBody ss)
+cprog' ((JSVariable _ clist _):rest) =
   do vars <- getVarInits clist
-     return (fmap (\(s,e) -> CGlobalVar s (Just e)) vars)
-cdecl _ = Nothing
+     (CProg rd rs) <- cprog' rest
+     let d = fmap (\(s,e) -> CGlobalVar s (Just e)) vars
+     return $ CProg (d ++ rd) rs
+cprog' rest =
+  do stmts <- combine2 (cstmt <$> rest)
+     return $ CProg [] stmts
 
 -- Converts a single JS statement into a list of C statements
 cstmt :: JSStatement -> Maybe [CStmt]
-cstmt (JSStatementBlock a1 stmts a2 semi) = combine2 (cstmt <$> stmts)
+cstmt (JSStatementBlock _ stmts _ _) = combine2 (cstmt <$> stmts)
 cstmt (JSIf _ _ e _ s) =
   do cond <- cexpr e
      ifBlock <- cstmt s
@@ -103,6 +111,9 @@ cstmt (JSIfElse _ _ e _ s1 _ s2) =
      ifBlock <- cstmt s1
      elseBlock <- cstmt s2
      return [CIfElse cond ifBlock elseBlock]
+cstmt (JSLabelled (JSIdentName _ l) _ s) =
+  do (s':ss') <- cstmt s
+     return $ (CLabelled l s'):ss'
 cstmt (JSAssignStatement e1 op e2 _) =
   do lhs <- cexpr e1
      rhs <- cexpr e2
@@ -110,10 +121,13 @@ cstmt (JSAssignStatement e1 op e2 _) =
        CVar x -> Just x
        _      -> Nothing
      rhs' <- case op of
-       JSAssign _      -> Just rhs
-       JSTimesAssign _ -> Just (CMul lhs rhs)
-       JSPlusAssign _  -> Just (CAdd lhs rhs)
-       JSMinusAssign _ -> Just (CSub lhs rhs)
+       JSAssign _       -> Just rhs
+       JSPlusAssign _   -> Just (CAdd lhs rhs)
+       JSMinusAssign _  -> Just (CSub lhs rhs)
+       JSTimesAssign _  -> Just (CMul lhs rhs)
+       JSDivideAssign _ -> Just (CDiv lhs rhs)
+       JSModAssign _    -> Just (CMod lhs rhs)
+       _                -> Nothing
      return [CSetVar lhs' rhs']
 cstmt (JSWhile _ _ e _ s) =
   do cond <- cexpr e
@@ -140,18 +154,20 @@ cexpr (JSExpressionBinary e1 op e2) =
   do loperand <- cexpr e1
      roperand <- cexpr e2
      operator <- case op of
-       JSBinOpPlus _  -> Just CAdd
-       JSBinOpMinus _ -> Just CSub
-       JSBinOpTimes _ -> Just CMul    -- Should include division and mod also
-       JSBinOpEq _    -> Just CEqu
-       JSBinOpNeq _   -> Just CNeq
-       JSBinOpGe _    -> Just CGE
-       JSBinOpGt _    -> Just CGT
-       JSBinOpLe _    -> Just CLE
-       JSBinOpLt _    -> Just CLT
-       JSBinOpAnd _   -> Just CAnd
-       JSBinOpOr _    -> Just COr
-       _              -> Nothing
+       JSBinOpPlus _   -> Just CAdd
+       JSBinOpMinus _  -> Just CSub
+       JSBinOpTimes _  -> Just CMul
+       JSBinOpDivide _ -> Just CDiv
+       JSBinOpMod _    -> Just CMod
+       JSBinOpEq _     -> Just CEqu
+       JSBinOpNeq _    -> Just CNeq
+       JSBinOpGe _     -> Just CGE
+       JSBinOpGt _     -> Just CGT
+       JSBinOpLe _     -> Just CLE
+       JSBinOpLt _     -> Just CLT
+       JSBinOpAnd _    -> Just CAnd
+       JSBinOpOr _     -> Just COr
+       _               -> Nothing
      return (operator loperand roperand)
 cexpr (JSExpressionParen _ e _) = cexpr e
 cexpr (JSMemberExpression (JSIdentifier _ fname) _ argList _) =
@@ -160,8 +176,9 @@ cexpr (JSMemberExpression (JSIdentifier _ fname) _ argList _) =
 cexpr (JSUnaryExpression op e) =
   do operand <- cexpr e
      operator <- case op of
-       JSUnaryOpNot _ -> Just CNot
-       _              -> Nothing
+       JSUnaryOpMinus _ -> Just CNeg
+       JSUnaryOpNot _   -> Just CNot
+       _                -> Nothing
      return (operator operand)
 cexpr _ = Nothing
 
