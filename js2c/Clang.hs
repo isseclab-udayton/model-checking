@@ -11,7 +11,7 @@ module Clang
   , cprog
   ) where
 
-import Control.Applicative (liftA2)
+import Control.Applicative (liftA2, liftA3)
 import Language.JavaScript.Parser.Parser as Parser
 import Language.JavaScript.Parser.AST as AST
 
@@ -32,6 +32,8 @@ data CStmt = CVarDecl String (Maybe CExpr)
 data CExpr = CTrue
            | CFalse
            | CUndefined
+           | CNaN
+           | CInfinity
            | CNumber String
            | CVar String
            | CFuncCall String [CExpr]
@@ -40,16 +42,20 @@ data CExpr = CTrue
            | CMul CExpr CExpr
            | CDiv CExpr CExpr
            | CMod CExpr CExpr
+           | CPos CExpr
            | CNeg CExpr
+           | CAnd CExpr CExpr
+           | COr CExpr CExpr
+           | CNot CExpr
            | CEqu CExpr CExpr
+           | CSequ CExpr CExpr
            | CNeq CExpr CExpr
+           | CSneq CExpr CExpr
            | CLT CExpr CExpr
            | CLE CExpr CExpr
            | CGT CExpr CExpr
            | CGE CExpr CExpr
-           | COr CExpr CExpr
-           | CAnd CExpr CExpr
-           | CNot CExpr
+           | CTer CExpr CExpr CExpr
 
 -- Converts a JSCommaList to a regular list
 fromCommaList :: JSCommaList a -> [a]
@@ -146,6 +152,8 @@ cstmt _ = Nothing
 -- Builds a C expression
 cexpr :: JSExpression -> Maybe CExpr
 cexpr (JSIdentifier _ "undefined") = Just CUndefined
+cexpr (JSIdentifier _ "NaN") = Just CNaN
+cexpr (JSIdentifier _ "Infinity") = Just CInfinity
 cexpr (JSIdentifier _ s) = Just (CVar s)
 cexpr (JSDecimal _ s) = Just (CNumber s)
 cexpr (JSLiteral _ "true") = Just CTrue
@@ -154,28 +162,33 @@ cexpr (JSExpressionBinary e1 op e2) =
   do loperand <- cexpr e1
      roperand <- cexpr e2
      operator <- case op of
-       JSBinOpPlus _   -> Just CAdd
-       JSBinOpMinus _  -> Just CSub
-       JSBinOpTimes _  -> Just CMul
-       JSBinOpDivide _ -> Just CDiv
-       JSBinOpMod _    -> Just CMod
-       JSBinOpEq _     -> Just CEqu
-       JSBinOpNeq _    -> Just CNeq
-       JSBinOpGe _     -> Just CGE
-       JSBinOpGt _     -> Just CGT
-       JSBinOpLe _     -> Just CLE
-       JSBinOpLt _     -> Just CLT
-       JSBinOpAnd _    -> Just CAnd
-       JSBinOpOr _     -> Just COr
-       _               -> Nothing
+       JSBinOpPlus _      -> Just CAdd
+       JSBinOpMinus _     -> Just CSub
+       JSBinOpTimes _     -> Just CMul
+       JSBinOpDivide _    -> Just CDiv
+       JSBinOpMod _       -> Just CMod
+       JSBinOpAnd _       -> Just CAnd
+       JSBinOpOr _        -> Just COr
+       JSBinOpEq _        -> Just CEqu
+       JSBinOpStrictEq _  -> Just CSequ
+       JSBinOpNeq _       -> Just CNeq
+       JSBinOpStrictNeq _ -> Just CSneq
+       JSBinOpGe _        -> Just CGE
+       JSBinOpGt _        -> Just CGT
+       JSBinOpLe _        -> Just CLE
+       JSBinOpLt _        -> Just CLT
+       _                  -> Nothing
      return (operator loperand roperand)
 cexpr (JSExpressionParen _ e _) = cexpr e
+cexpr (JSExpressionTernary c _ e1 _ e2) =
+  liftA3 CTer (cexpr c) (cexpr e1) (cexpr e2)
 cexpr (JSMemberExpression (JSIdentifier _ fname) _ argList _) =
   do args <- combine1 (cexpr <$> (fromCommaList argList))
      return (CFuncCall fname args)
 cexpr (JSUnaryExpression op e) =
   do operand <- cexpr e
      operator <- case op of
+       JSUnaryOpPlus _  -> Just CPos
        JSUnaryOpMinus _ -> Just CNeg
        JSUnaryOpNot _   -> Just CNot
        _                -> Nothing

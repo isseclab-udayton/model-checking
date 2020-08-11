@@ -8,9 +8,11 @@ JavaScript input programs must follow certain guidelines to have a valid C trans
 
 * values of type `Number`, `Boolean`, `Undefined`
 * `+ - * / %` arithmetic operators
-* unary `-` operator
-* `== != >= <= > <` comparison operators
+* `+ -` unary operators
 * `&& || !` logical operators
+* `== != === !==` equality operators
+* `>= <= > <` relational operators
+* `?:` ternary operator
 * `= += -= *= /= %=` assignment operators
 * `if`-`else if`-`else` blocks
 * `while` blocks

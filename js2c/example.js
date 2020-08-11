@@ -1,5 +1,4 @@
-var x = -10;
-var y;
+var x, y;
 var error = false;
 
 function f(a, b) {
@@ -8,10 +7,11 @@ function f(a, b) {
     return a * b;
 }
 
+x = -10;
 while (x <= 10) {
     y = -10;
     while (y <= 10) {
-        if (!f(x)) {
+        if (!f(x, y)) {
             ERROR: error = true;
         }
         y += 1;
