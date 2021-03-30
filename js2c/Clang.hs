@@ -89,7 +89,7 @@ cprog' ((JSFunction _ (JSIdentName _ ident) _ arglist _ (JSBlock _ stmts _) _):r
      body <- getBody stmts
      (CProg rd rs) <- cprog' rest
      return $ CProg ((CFuncDecl ident args body):rd) rs
-    where f (JSIdentifier _ x) = Just x
+    where f (JSIdentName _ x) = Just x
           f _ = Nothing
           getBody [] = Just [CReturn CUndefined]
           getBody [JSReturn _ Nothing _] = Just [CReturn CUndefined]
